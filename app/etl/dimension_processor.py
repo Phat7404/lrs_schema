@@ -115,8 +115,12 @@ class DimensionProcessor:
         event_meta_id = hashlib.md5(event_name.encode()).hexdigest()
         
         # Parse moodle_event_action and moodle_module_name
-        moodle_event_action = event_name.split('\\')[-1] if '\\' in event_name else event_name.split('/')[-1]
-        moodle_module_name = event_name.split('\\')[0] if '\\' in event_name else event_name.split('/')[0]
+        # Handle leading slashes and different separator formats
+        normalized_name = event_name.replace('/', '\\').strip('\\')
+        parts = normalized_name.split('\\')
+        
+        moodle_event_action = parts[-1] if parts else event_name
+        moodle_module_name = parts[0] if parts else None
         
         cursor = self.sqlserver_conn.cursor()
         try:

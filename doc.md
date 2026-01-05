@@ -313,7 +313,159 @@ WHERE
 
 ---
 
-## IV. Tóm tắt vai trò mô hình dữ liệu với Learning Analytics
+## IV. Gợi ý truy vấn cho Dashboard (Monitor & Analytics)
+
+Dưới đây là các truy vấn SQL mẫu để xây dựng dashboard giám sát và phân tích kết quả từ góc độ Giáo viên, Học sinh và Quản trị viên.
+
+### 1. Cho Giáo viên (Teacher Perspective)
+
+- **Top 5 câu hỏi khó nhất trong khóa học:** Tìm các câu hỏi có tỷ lệ trả lời đúng thấp nhất để giáo viên có kế hoạch giải đáp hoặc điều chỉnh nội dung.
+
+```sql
+SELECT TOP 5
+    ad.activity_name,
+    COUNT(fqa.statement_id) as total_attempts,
+    SUM(CAST(fqa.is_correct AS INT)) * 100.0 / COUNT(fqa.statement_id) as success_rate
+FROM fact_question_answer fqa
+JOIN activity_detail ad ON fqa.question_activity_id = ad.activity_id
+JOIN bridge_ActivityHierarchy bridge ON fqa.question_activity_id = bridge.descendant_activity_id
+WHERE bridge.ancestor_activity_id = 'http://171.246.224.10:81/moodle/course/view.php?id=7' -- Thay ID khóa học
+GROUP BY ad.activity_name
+ORDER BY success_rate ASC;
+```
+
+- **Xếp hạng mức độ tương tác của học sinh:** Xác định những học sinh tích cực nhất hoặc ít tương tác nhất.
+
+```sql
+SELECT 
+    da.actor_name,
+    COUNT(DISTINCT CAST(fs.event_timestamp AS DATE)) as active_days,
+    COUNT(fs.statement_id) as total_interactions
+FROM fact_statement fs
+JOIN dim_actor_account da ON fs.actor_account_id = da.actor_account_id
+GROUP BY da.actor_name
+ORDER BY active_days DESC, total_interactions DESC;
+```
+
+### 2. Cho Học sinh (Student Perspective)
+
+- **Tiến độ hoàn thành khóa học (%):** Tính toán xem học sinh đã hoàn thành bao nhiêu phần trăm các hoạt động trong một khóa học cụ thể.
+
+```sql
+WITH CourseActivities AS (
+    -- Lấy tổng số hoạt động trong khóa học (loại trừ chính khóa học)
+    SELECT COUNT(DISTINCT descendant_activity_id) as total_count
+    FROM bridge_ActivityHierarchy
+    WHERE ancestor_activity_id = 'http://171.246.224.10:81/moodle/course/view.php?id=7'
+      AND path_length > 0
+),
+CompletedActivities AS (
+    -- Lấy số hoạt động học sinh đã hoàn thành
+    SELECT COUNT(DISTINCT fs.activity_id) as completed_count
+    FROM fact_statement fs
+    JOIN dim_verb dv ON fs.verb_id = dv.verb_id
+    JOIN bridge_ActivityHierarchy bridge ON fs.activity_id = bridge.descendant_activity_id
+    WHERE fs.actor_account_id = '3'
+      AND bridge.ancestor_activity_id = 'http://171.246.224.10:81/moodle/course/view.php?id=7'
+      AND dv.verb_display IN ('completed', 'passed')
+)
+SELECT 
+    completed_count, 
+    total_count,
+    CAST(completed_count AS FLOAT) * 100 / total_count as completion_percentage
+FROM CompletedActivities, CourseActivities;
+```
+
+- **Xu hướng điểm số qua các bài đánh giá:** Theo dõi sự tiến bộ của bản thân theo thời gian.
+
+```sql
+SELECT 
+    fq.quiz_name,
+    fs.event_timestamp,
+    fq.score_raw,
+    fq.is_successful
+FROM fact_quiz fq
+JOIN fact_statement fs ON fq.statement_id = fs.statement_id
+WHERE fs.actor_account_id = '3'
+ORDER BY fs.event_timestamp ASC;
+```
+
+- **Phân tích nỗ lực (Sơ đồ nỗ lực vs Kết quả):** Xem mối quan hệ giữa số lần thử và điểm số đạt được để điều chỉnh cách học.
+
+```sql
+SELECT 
+    fq.quiz_name,
+    fq.attempt_count,
+    fq.score_raw,
+    fq.duration / 60.0 as duration_minutes
+FROM fact_quiz fq
+JOIN fact_statement fs ON fq.statement_id = fs.statement_id
+WHERE fs.actor_account_id = '3'
+ORDER BY fq.attempt_count DESC;
+```
+
+- **Gợi ý nội dung cần ôn tập:** Danh sách các bài quiz có điểm thấp hoặc trạng thái "failed" cần được học sinh ưu tiên xem lại.
+
+```sql
+SELECT 
+    fq.quiz_name,
+    fq.score_raw,
+    fq.last_review_timestamp,
+    CASE 
+        WHEN fq.is_reviewed = 0 THEN N'Chưa ôn tập'
+        ELSE N'Đã ôn tập ' + CAST(fq.review_count AS NVARCHAR) + N' lần'
+    END as review_status
+FROM fact_quiz fq
+JOIN fact_statement fs ON fq.statement_id = fs.statement_id
+WHERE fs.actor_account_id = '3'
+  AND (fq.is_successful = 0 OR fq.score_raw < 50)
+ORDER BY fq.score_raw ASC;
+```
+
+- **Thống kê thời gian học tập tập trung:** Tổng thời gian thực tế dành cho các hoạt động chính trong khóa học.
+
+```sql
+SELECT 
+    ad.activity_name,
+    ISNULL(SUM(fq.duration), 0) / 60 as total_minutes_spent
+FROM fact_quiz fq
+JOIN fact_statement fs ON fq.statement_id = fs.statement_id
+JOIN activity_detail ad ON fs.activity_id = ad.activity_id
+WHERE fs.actor_account_id = '3'
+GROUP BY ad.activity_name
+HAVING SUM(fq.duration) > 0; -- Chỉ lấy những hoạt động thực sự có tốn thời gian
+```
+
+### 3. Giám sát hệ thống (System Monitoring)
+
+- **Số lượng sự kiện thu thập theo thời gian (7 ngày gần nhất):** Kiểm tra xem dữ liệu có được đẩy vào đều đặn không.
+
+```sql
+SELECT 
+    CAST(event_timestamp AS DATE) as activity_date,
+    COUNT(*) as total_events
+FROM fact_statement
+WHERE event_timestamp >= DATEADD(day, -7, GETDATE())
+GROUP BY CAST(event_timestamp AS DATE)
+ORDER BY activity_date;
+```
+
+- **Thống kê các module Moodle đang sinh ra nhiều sự kiện nhất:**
+
+```sql
+SELECT 
+    dem.moodle_module_name,
+    dem.moodle_event_action,
+    COUNT(*) as event_count
+FROM fact_statement fs
+JOIN dim_event_meta dem ON fs.event_meta_id = dem.event_meta_id
+GROUP BY dem.moodle_module_name, dem.moodle_event_action
+ORDER BY event_count DESC;
+```
+
+---
+
+## V. Tóm tắt vai trò mô hình dữ liệu với Learning Analytics
 
 - **Fact tables** cung cấp dữ liệu chi tiết ở 3 mức: **event**, **quiz attempt**, **question answer**, phù hợp cho cả báo cáo mô tả lẫn mô hình dự đoán.
 - **Dimension tables** chuẩn hóa người học, hành vi (verb), hoạt động, metadata sự kiện, tạo nền cho việc slice/dice dữ liệu theo nhiều chiều phân tích.

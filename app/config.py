@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     sqlserver_port: int = 1433
     sqlserver_database: str = "moodle_datawarehouse"
     sqlserver_user: str = "SA"
-    sqlserver_password: str = "Admin123"
+    sqlserver_password: str = "Phat_07042004"
     
     # MySQL (Moodle) Configuration
     mysql_host: str = "localhost"
