@@ -86,56 +86,6 @@ Xem file: **[Tài liệu Tham khảo](./05_Tai_Lieu_Tham_Khao.md)**
 
 ---
 
-## 💡 HƯỚNG DẪN SỬ DỤNG
-
-### Cho Nhà phát triển Dashboard
-1. Đọc từng nhóm chỉ số để hiểu yêu cầu nghiệp vụ
-2. Xác định dữ liệu cần thiết từ LMS/LRS
-3. Thiết kế data model và ETL pipeline
-4. Xây dựng visualization components
-5. Implement alerts và notifications
-
-### Cho Nhà nghiên cứu / Sinh viên
-1. Sử dụng làm tài liệu tham khảo cho chương Learning Analytics
-2. Trích dẫn các nguồn học thuật trong luận văn
-3. Áp dụng framework cho nghiên cứu thực nghiệm
-4. Tùy chỉnh KPIs theo bối cảnh cụ thể
-
-### Cho Quản lý Giáo dục
-1. Hiểu các chỉ số đánh giá chất lượng dạy học
-2. Thiết lập mục tiêu cải tiến (benchmarks)
-3. Theo dõi và đánh giá hiệu quả giảng dạy
-4. Ra quyết định dựa trên dữ liệu
-
----
-
-## 🔗 CẤU TRÚC THỨ MỤC
-
-```
-LMS_Dashboard_KPIs/
-├── README.md                          # File này
-├── 01_Chi_So_Giang_Vien.md           # 15 KPIs giảng viên
-├── 02_Chi_So_Nguoi_Hoc.md            # 18 KPIs người học
-├── 03_Chi_So_Qua_Trinh_Day_Hoc.md    # 12 KPIs quá trình dạy học
-├── 04_Chi_So_Moi_Truong_LMS.md       # 10 KPIs môi trường LMS
-├── 05_Tai_Lieu_Tham_Khao.md          # Danh sách tài liệu tham khảo
-└── 06_Phu_Luc.md                      # Công thức chi tiết, ví dụ ứng dụng
-```
-
----
-
-## 📈 TỔNG QUAN CHỈ SỐ
-
-| Nhóm chỉ số | Số lượng | Định lượng | Định tính |
-|-------------|----------|------------|-----------|
-| Giảng viên  | 15       | 12         | 3         |
-| Người học   | 18       | 15         | 3         |
-| Quá trình   | 12       | 9          | 3         |
-| Môi trường  | 10       | 7          | 3         |
-| **TỔNG**    | **55**   | **43**     | **12**    |
-
----
-
 ## 🎓 KHUNG LÝ THUYẾT
 
 Bộ KPIs được xây dựng dựa trên các mô hình lý thuyết:
@@ -148,37 +98,8 @@ Bộ KPIs được xây dựng dựa trên các mô hình lý thuyết:
 
 ---
 
-## ⚙️ ỨNG DỤNG THỰC TẾ
-
-### Nền tảng LMS hỗ trợ
-- ✅ **Moodle** (phổ biến nhất tại VN)
-- ✅ **Canvas LMS**
-- ✅ **Google Classroom** (với API integration)
-- ✅ **Microsoft Teams for Education**
-- ✅ **Custom LMS** (với xAPI/SCORM support)
-
-### Công nghệ triển khai
-- **Backend**: Python (pandas, scikit-learn), Node.js
-- **Visualization**: PowerBI, Tableau, D3.js, Chart.js
-- **Database**: PostgreSQL, MongoDB, InfluxDB
-- **Real-time**: WebSocket, Apache Kafka
-
----
-
-## 📧 LIÊN HỆ & ĐÓNG GÓP
-
-Tài liệu này được xây dựng cho mục đích nghiên cứu và giáo dục.
-
-**Phiên bản**: 1.0  
-**Ngày cập nhật**: 16/01/2026  
-**Tác giả**: Dashboard LMS Research Team
-
----
-
 ## 📖 BẮT ĐẦU
 
 👉 **[Bắt đầu với Nhóm 1: Chỉ số Giảng viên](./01_Chi_So_Giang_Vien.md)**
 
 ---
-
-*Tài liệu này tuân thủ các tiêu chuẩn học thuật quốc tế và có thể được sử dụng cho nghiên cứu, đào tạo và triển khai thực tế.*
