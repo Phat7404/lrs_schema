@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>ETL Application Documentation &lpar;&DiacriticalGrave;etl&lowbar;app&DiacriticalGrave;&rpar;</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="etl-application-documentation-etl_app">ETL Application Documentation (<code>etl_app</code>)</h1>
+<p>Tài liệu này mô tả luồng thực thi và quy tắc ánh xạ dữ liệu (mapping) từ xAPI Statements sang kho dữ liệu Star Schema (<code>xAPI_Analytics_DB</code>).</p>
+<h2 id="1-luồng-thực-thi-execution-flow">1. Luồng Thực thi (Execution Flow)</h2>
+<p>Ứng dụng ETL hoạt động theo cơ chế Batch Processing (Xử lý theo lô):</p>
+<pre><code class="language-mermaid">graph TD
+    A[main.py] --&gt; B[XAPIService]
+    B --&gt;|Fetch Statements| C[List[Dict]]
+    C --&gt; D[ETLManager]
+    D --&gt; E[DimensionProcessor]
+    D --&gt; F[FactProcessor]
+    D --&gt; G[BridgeProcessor]
+    E --&gt;|Save| H[(SQL Server)]
+    F --&gt;|Save| H
+    G --&gt;|Save| H
+</code></pre>
+<ol>
+<li><strong>Khởi tạo</strong>: <code>main.py</code> khởi tạo <code>DatabaseManager</code> để kết nối SQL Server và MySQL.</li>
+<li><strong>Lấy dữ liệu</strong>: <code>XAPIService</code> gửi yêu cầu HTTP Basic Auth đến LRS để lấy danh sách Statements (mặc định 100 bản ghi/lần).</li>
+<li><strong>Điều phối (Orchestration)</strong>: <code>ETLManager</code> lặp qua từng Statement:
+<ul>
+<li><strong>DimensionProcessor</strong>: Lưu thông tin vào các bảng Dim (Actor, Verb, Activity, Time...). Đảm bảo tính duy nhất.</li>
+<li><strong>FactProcessor</strong>: Tính toán và lưu vào các bảng Fact. Xử lý các logic phức tạp như thời gian học (<code>duration</code>), kết quả thi (<code>quiz/question</code>).</li>
+<li><strong>BridgeProcessor</strong>: Xây dựng quan hệ phân cấp (Closure Table) cho các hoạt động.</li>
+</ul>
+</li>
+<li><strong>Hoàn tất</strong>: Thực hiện <code>COMMIT</code> transaction để đảm bảo tính toàn vẹn dữ liệu và đóng kết nối.</li>
+</ol>
+<hr>
+<h2 id="2-ánh-xạ-chi-tiết-từng-trường-field-level-mappings">2. Ánh xạ Chi tiết từng Trường (Field-level Mappings)</h2>
+<p>Tất cả các trường dữ liệu được trích xuất từ cấu trúc JSON của xAPI Statement hoặc được tính toán (Derived) trong quá trình xử lý.</p>
+<h3 id="21-dimension-tables-bảng-chiều">2.1 DIMENSION TABLES (Bảng Chiều)</h3>
+<h4 id="dim_actor-thông-tin-người-dùng"><code>dim_actor</code> (Thông tin người dùng)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>actor_id</code></strong> (PK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>actor.account.name</code></td>
+<td style="text-align:left">Định danh duy nhất của người dùng (thường là Moodle Username).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>actor_name</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>actor.name</code></td>
+<td style="text-align:left">Tên đầy đủ hiển thị của người dùng.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="dim_interation_type-loại-tương-tácverb"><code>dim_interation_type</code> (Loại tương tác/Verb)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>interaction_id</code></strong> (PK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>verb.id</code></td>
+<td style="text-align:left">URL định danh Verb (vd: <code>.../verbs/completed</code>).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>interaction_name</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>verb.display['en']</code></td>
+<td style="text-align:left">Tên hành động thân thiện (vd: &quot;Completed&quot;).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>interaction_category</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left">Logic <code>DimensionProcessor</code></td>
+<td style="text-align:left">Phân nhóm: <code>navigation</code> (launched), <code>engagement</code> (experienced), <code>assessment</code> (answered/passed/failed), <code>completion</code> (completed).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="dim_time-chiều-thời-gian"><code>dim_time</code> (Chiều thời gian)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>time_id</code></strong> (PK)</td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>timestamp</code> (YYYYMMDDHH)</td>
+<td style="text-align:left">Khóa đại diện cho giờ thực hiện hành động.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>date</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>timestamp</code> (Date)</td>
+<td style="text-align:left">Ngày thực hiện (YYYY-MM-DD).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>week</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left">ISO Week Number</td>
+<td style="text-align:left">Số thứ tự tuần trong năm.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>month</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left">ISO Month Number</td>
+<td style="text-align:left">Số thứ tự tháng trong năm.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>day_of_week</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left">Day Name</td>
+<td style="text-align:left">Tên thứ trong tuần (Monday, Tuesday...).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>time_slot</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>hour</code> mapping (Morning...)</td>
+<td style="text-align:left"><code>Morning</code> (5h-12h), <code>Afternoon</code> (12h-18h), <code>Evening</code> (18h-22h), <code>Night</code> (22h-5h).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="dim_context-bối-cảnhđăng-ký"><code>dim_context</code> (Bối cảnh/Đăng ký)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>context_id</code></strong> (PK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.registration</code></td>
+<td style="text-align:left">ID phiên đăng ký của người dùng vào hoạt động (UUID).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>course_id</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>extract_course_id</code> logic</td>
+<td style="text-align:left">Trích xuất Moodle Course ID từ URL hoặc metadata.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>section_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.extensions</code></td>
+<td style="text-align:left">ID của chương/mục trong khóa học.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>learning_path_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.extensions</code></td>
+<td style="text-align:left">ID của lộ trình học tập tương ứng.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="dim_activity-danh-mục-hoạt-động"><code>dim_activity</code> (Danh mục Hoạt động)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>activity_id</code></strong> (PK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>object.id</code></td>
+<td style="text-align:left">URL định danh hoạt động (vd: <code>.../mod/quiz/view.php?id=10</code>).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>activity_type</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>object.definition.type</code></td>
+<td style="text-align:left">Loại hoạt động (vd: <code>.../activities/assessment</code>).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>content_type</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>object.definition.name</code></td>
+<td style="text-align:left">Tên hoặc chuỗi mô tả nội dung hoạt động.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="dim_learning_outcome-chuẩn-đầu-ra"><code>dim_learning_outcome</code> (Chuẩn đầu ra)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>outcome_id</code></strong> (PK)</td>
+<td style="text-align:left">xAPI + Moodle</td>
+<td style="text-align:left"><code>context.extensions</code> -&gt; <code>mdl_competency.id</code> / <code>idnumber</code></td>
+<td style="text-align:left">ID của chuẩn đầu ra (lấy từ metadata xAPI để truy vấn Moodle).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>outcome_code</code></td>
+<td style="text-align:left">Moodle</td>
+<td style="text-align:left"><code>mdl_competency.idnumber</code> (hoặc <code>shortname</code>)</td>
+<td style="text-align:left">Mã định danh chuẩn đầu ra (vd: LO1, LO2).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>outcome_description</code></td>
+<td style="text-align:left">Moodle</td>
+<td style="text-align:left"><code>mdl_competency.description</code></td>
+<td style="text-align:left">Mô tả chi tiết nội dung chuẩn đầu ra từ Moodle.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>outcome_level</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>mdl_competency.description</code> + <code>shortname</code> (Bloom mapping)</td>
+<td style="text-align:left">Phân loại Bloom (Tiếng Việt): <code>Nhớ</code> (Remember), <code>Hiểu</code> (Understand), <code>Vận dụng</code> (Apply)... dựa trên nội dung.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="22-fact-tables-bảng-sự-kiện">2.2 FACT TABLES (Bảng Sự kiện)</h3>
+<h4 id="fact_statement-nhật-ký-sự-kiện-chi-tiết"><code>fact_statement</code> (Nhật ký Sự kiện chi tiết)</h4>
+<p>Lưu trữ toàn bộ lịch sử tương tác (Audit Trail) phục vụ truy vấn chi tiết.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>event_id</code></strong> (PK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>id</code> (Statement ID)</td>
+<td style="text-align:left">ID duy nhất của mỗi statement.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>actor_id</code> (FK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>actor.account.name</code></td>
+<td style="text-align:left">Liên kết người dùng.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>interaction_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>verb.id</code></td>
+<td style="text-align:left">Loại hành động.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>context_id</code> (FK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.registration</code></td>
+<td style="text-align:left">Mã phiên đăng ký (Session).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>timestamp</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>timestamp</code></td>
+<td style="text-align:left">Thời gian thực phát sinh sự kiện (ISO8601).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>object_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>object.id</code></td>
+<td style="text-align:left">Target của hành động.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>time_id</code> (FK)</td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>timestamp</code> (YYYYMMDDHH)</td>
+<td style="text-align:left">Phân tích theo thời gian.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="fact_session-phiên-học-tập"><code>fact_session</code> (Phiên học tập)</h4>
+<p>Tổng hợp các hoạt động theo từng lần người dùng truy cập (Registration).</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>session_id</code></strong> (PK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.registration</code></td>
+<td style="text-align:left">ID duy nhất cho phiên (UUID).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>start_time</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>min(timestamp)</code></td>
+<td style="text-align:left">Thời điểm bắt đầu phiên.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>end_time</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>max(timestamp)</code></td>
+<td style="text-align:left">Thời điểm kết thúc hoặc hoạt động cuối cùng.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>session_duration</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>DATEDIFF(start, end)</code></td>
+<td style="text-align:left">Tổng thời gian phiên (tính bằng giây).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>entry_point</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>object.id</code> (First stmt)</td>
+<td style="text-align:left">Hoạt động đầu tiên trong phiên.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="fact_quiz-kết-quả-thikiểm-tra"><code>fact_quiz</code> (Kết quả thi/kiểm tra)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>quiz_attempt_id</code></strong></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.registration</code></td>
+<td style="text-align:left">Mã lần thử (Attempt ID).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>total_score</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>result.score.raw</code></td>
+<td style="text-align:left">Điểm thô đạt được.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>isComplete</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>result.completion</code></td>
+<td style="text-align:left">Trạng thái hoàn thành (0/1).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>isSucceed</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>result.success</code></td>
+<td style="text-align:left">Trạng thái đạt/trượt (0/1).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>raw_duration_ms</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>result.duration</code> (PT...S)</td>
+<td style="text-align:left">Thời gian làm bài quy đổi ra milliseconds.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>end_time</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>timestamp</code> (Completed)</td>
+<td style="text-align:left">Thời điểm nộp bài.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="fact_question-chi-tiết-câu-hỏi"><code>fact_question</code> (Chi tiết câu hỏi)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><code>question_id</code></strong></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>object.id</code></td>
+<td style="text-align:left">ID định danh câu hỏi.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>quiz_attempt_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.registration</code></td>
+<td style="text-align:left">Liên kết với bài thi (<code>fact_quiz</code>).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>selected_answer</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>result.response</code></td>
+<td style="text-align:left">Lựa chọn của người dùng.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>is_correct</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>result.success</code></td>
+<td style="text-align:left">Đúng (1) hoặc Sai (0).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="fact_activity-thống-kê-hành-vi-tổng-hợp"><code>fact_activity</code> (Thống kê hành vi tổng hợp)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>activity_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>object.id</code></td>
+<td style="text-align:left">ID của hoạt động.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>actor_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>actor.account.name</code></td>
+<td style="text-align:left">ID người dùng.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>activity_length</code></td>
+<td style="text-align:left">Moodle</td>
+<td style="text-align:left"><code>mdl_quiz.timelimit</code> (Moodle)</td>
+<td style="text-align:left">Thời lượng ước lượng của hoạt động.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>activity_type</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>object.definition.type</code></td>
+<td style="text-align:left">Loại hoạt động (Quiz, Resource, v.v.).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>activity_difficulty</code></td>
+<td style="text-align:left">Metadata</td>
+<td style="text-align:left">Tự định nghĩa</td>
+<td style="text-align:left">Độ khó của hoạt động (Metadata).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>activity_order</code></td>
+<td style="text-align:left">Moodle</td>
+<td style="text-align:left"><code>mdl_course_modules.section</code></td>
+<td style="text-align:left">Thứ tự hiển thị của hoạt động trong khóa học.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>is_mandatory</code></td>
+<td style="text-align:left">Moodle</td>
+<td style="text-align:left"><code>mdl_course_modules.completion</code></td>
+<td style="text-align:left">Hoạt động bắt buộc (1) hay không (0).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>context_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.registration</code></td>
+<td style="text-align:left">Liên kết phiên học tập.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>completion_status</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left">Logic <code>FactProcessor</code></td>
+<td style="text-align:left">Trạng thái: <code>In Progress</code>, <code>Completed</code>, <code>Passed</code>, <code>Failed</code>.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>time_spent</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>sum(result.duration)</code></td>
+<td style="text-align:left">Tổng thời gian tương tác (giây).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>attempt_count</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>COUNT(Statements)</code> (Quiz only)</td>
+<td style="text-align:left">Tổng số lần làm bài (áp dụng cho Quiz).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>time_id</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>timestamp</code> (YYYYMMDDHH)</td>
+<td style="text-align:left">Khóa thời gian.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="fact_progress-tiến-độ-học-tập"><code>fact_progress</code> (Tiến độ học tập)</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Trường SQL</th>
+<th style="text-align:left">Nguồn gốc</th>
+<th style="text-align:left">Chi tiết ánh xạ</th>
+<th style="text-align:left">Mô tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>actor_id</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>actor.account.name</code></td>
+<td style="text-align:left">ID người dùng.</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>outcome_id</code> (FK)</td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>context.extensions</code></td>
+<td style="text-align:left">Liên kết mã chuẩn đầu ra (<code>dim_learning_outcome</code>).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>progress_percent</code></td>
+<td style="text-align:left">Derived</td>
+<td style="text-align:left"><code>result.completion</code> (100%)</td>
+<td style="text-align:left">Phần trăm tiến độ (thường gán 100 khi đạt completion).</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>last_activity_time</code></td>
+<td style="text-align:left">xAPI</td>
+<td style="text-align:left"><code>timestamp</code></td>
+<td style="text-align:left">Thời điểm ghi nhận tiến độ cuối cùng.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="23-bridge-tables-phân-cấp">2.3 BRIDGE TABLES (Phân cấp)</h3>
+<h4 id="bridge_activityhierachy-closure-table"><code>bridge_ActivityHierachy</code> (Closure Table)</h4>
+<ul>
+<li><strong><code>ancestor_activity_id</code></strong>: ID của hoạt động cha (trích xuất từ <code>context.contextActivities.parent</code>).</li>
+<li><strong><code>descendant_activity</code></strong>: ID của hoạt động hiện tại (đối tượng chính của Statement).</li>
+<li><strong><code>is_direct_parent</code></strong>: <code>1</code> nếu là quan hệ trực hệ, <code>0</code> nếu là quan hệ tự tham chiếu (Self-reference).</li>
+</ul>
+<hr>
+<h2 id="3-cách-chạy-ứng-dụng">3. Cách chạy Ứng dụng</h2>
+<p>Chạy từ thư mục gốc của dự án:</p>
+<pre><code class="language-powershell">python <span class="hljs-literal">-m</span> etl_app.main
+</code></pre>
+<p>Cấu hình được quản lý trong file <code>.env</code>.</p>
+
+            
+            
+        </body>
+        </html>

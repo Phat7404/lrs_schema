@@ -13,24 +13,6 @@ Tài liệu này trình bày bộ chỉ số đánh giá toàn diện cho dashbo
 
 ---
 
-## 🎯 MỤC ĐÍCH VÀ PHẠM VI
-
-### Mục tiêu Dashboard
-Dashboard được thiết kế để đánh giá nghiệp vụ sư phạm và hiệu quả dạy – học ở các cấp độ:
-- **Giảng viên / Giáo viên**: Năng lực sư phạm, hoạt động giảng dạy
-- **Người học**: Học sinh, sinh viên
-- **Môn học / Khóa học**: Hiệu quả thiết kế và triển khai
-- **Nhà trường / Khoa**: Quản lý và chiến lược giáo dục
-
-### Dữ liệu Thu thập
-- Log truy cập hệ thống
-- Hoạt động học tập (xem bài, nộp bài, làm quiz, thảo luận)
-- Kết quả đánh giá (điểm số, completion, feedback)
-- Thời lượng học tập, mức độ tương tác
-- xAPI statements (nếu có tích hợp LRS)
-
----
-
 ## 📊 CẤU TRÚC BỘ CHỈ SỐ
 
 Bộ chỉ số được tổ chức thành **4 nhóm chính**:
