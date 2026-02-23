@@ -56,6 +56,8 @@ class ContextActivity(BaseModel):
 class ContextActivities(BaseModel):
     parent: Optional[List[ContextActivity]] = None
     category: Optional[List[ContextActivity]] = None
+    grouping: Optional[List[ContextActivity]] = None
+    other: Optional[List[ContextActivity]] = None
 
 
 class Context(BaseModel):

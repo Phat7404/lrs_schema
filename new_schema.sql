@@ -59,6 +59,7 @@ CREATE TABLE dim_context (
     context_id NVARCHAR(255) NOT NULL,         -- xAPI.context
     course_id INT,                             -- Moodle Course ID
     section_id INT,                            -- Moodle Section ID
+    resource_id INT,                           -- Moodle Resource/Module ID (cmid)
     learning_path_id INT,                      -- Moodle Learning Path ID
     is_interrupt BIT DEFAULT 0,                -- (Derived)
     CONSTRAINT PK_dim_context PRIMARY KEY (context_id)
@@ -145,7 +146,8 @@ GO
 -- 3. fact_quiz (Kết quả bài kiểm tra)
 IF OBJECT_ID('fact_quiz', 'U') IS NOT NULL DROP TABLE fact_quiz;
 CREATE TABLE fact_quiz (
-    quiz_attempt_id NVARCHAR(255) NOT NULL,    -- ID lần thử (Moodle/xAPI context)
+    quiz_attempt_id NVARCHAR(255) NOT NULL,    -- ID lần thử (Moodle/xAPI context) - Map to mdl_quiz_attempts.id
+    quiz_id INT,                               -- Moodle Quiz ID
     time_id INT,
     attempt_no INT,                            -- Số lần thử (moodle)
     actor_id NVARCHAR(255) NOT NULL,

@@ -109,6 +109,7 @@ class DimensionProcessor:
     def process_context(self, statement: Statement) -> str:
         """Process dim_context and return a unique composite context_id"""
         course_id = self.extractor.extract_moodle_course_id(statement)
+        resource_id = self.extractor.extract_moodle_module_id(statement.object.id)
         
         section_id = None
         learning_path_id = None
@@ -122,18 +123,17 @@ class DimensionProcessor:
                     learning_path_id = int(val)
 
         # 2. Fallback: Moodle DB
-        cmid = self.extractor.extract_moodle_module_id(statement.object.id)
-        if cmid and (not section_id or not learning_path_id):
+        if resource_id and (not section_id or not learning_path_id):
             try:
                 mysql_conn = self.db_manager.get_mysql_connection()
                 with mysql_conn.cursor() as mysql_cursor:
                     if not section_id:
-                        mysql_cursor.execute("SELECT section FROM mdl_course_modules WHERE id = %s", (cmid,))
+                        mysql_cursor.execute("SELECT section FROM mdl_course_modules WHERE id = %s", (resource_id,))
                         res = mysql_cursor.fetchone()
                         if res: section_id = res['section']
                     
                     if not learning_path_id:
-                        mysql_cursor.execute("SELECT competencyid FROM mdl_competency_modulecomp WHERE cmid = %s", (cmid,))
+                        mysql_cursor.execute("SELECT competencyid FROM mdl_competency_modulecomp WHERE cmid = %s", (resource_id,))
                         comp_res = mysql_cursor.fetchone()
                         if comp_res:
                             comp_id = comp_res['competencyid']
@@ -150,24 +150,24 @@ class DimensionProcessor:
             except Exception as e:
                 logger.error(f"Error fetching section/path from Moodle: {e}")
 
-        # 3. Generate Composite context_id (e.g., CTX_12_90_0)
+        # 3. Generate Composite context_id (e.g., CTX_12_90_273)
         c_id_part = str(course_id) if course_id else "0"
         s_id_part = str(section_id) if section_id else "0"
-        p_id_part = str(learning_path_id) if learning_path_id else "0"
-        context_id = f"CTX_{c_id_part}_{s_id_part}_{p_id_part}"
+        r_id_part = str(resource_id) if resource_id else "0"
+        context_id = f"CTX_{c_id_part}_{s_id_part}_{r_id_part}"
 
         cursor = self.sqlserver_conn.cursor()
         try:
             cursor.execute("""
                 IF NOT EXISTS (SELECT 1 FROM dim_context WHERE context_id = %s)
-                INSERT INTO dim_context (context_id, course_id, section_id, learning_path_id)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO dim_context (context_id, course_id, section_id, learning_path_id, resource_id)
+                VALUES (%s, %s, %s, %s, %s)
                 ELSE
                 UPDATE dim_context 
-                SET course_id = %s, section_id = %s, learning_path_id = %s
+                SET course_id = %s, section_id = %s, learning_path_id = %s, resource_id = %s
                 WHERE context_id = %s
-            """, (context_id, context_id, course_id, section_id, learning_path_id, 
-                  course_id, section_id, learning_path_id, context_id))
+            """, (context_id, context_id, course_id, section_id, learning_path_id, resource_id,
+                  course_id, section_id, learning_path_id, resource_id, context_id))
         except Exception as e:
             logger.error(f"Error processing dim_context: {e}")
         finally:

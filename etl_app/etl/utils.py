@@ -22,11 +22,30 @@ class DataExtractor:
         if match:
             return int(match.group(1))
         
-        # Try to find id=X pattern
-        match = re.search(r'[?&]id=(\d+)', url)
-        if match:
-            return int(match.group(1))
+        # Try to find id=X pattern (if not question.php, id might be cmid)
+        if 'question.php' not in url:
+            match = re.search(r'[?&]id=(\d+)', url)
+            if match:
+                return int(match.group(1))
         
+        return None
+
+    @staticmethod
+    def extract_moodle_attempt_id(statement: Statement) -> Optional[int]:
+        """Extract Moodle quiz attempt ID from contextActivities or object ID"""
+        urls = [statement.object.id]
+        if statement.context and statement.context.contextActivities:
+            ca = statement.context.contextActivities
+            # Check all possible context activity types
+            for attr in ['parent', 'grouping', 'category', 'other']:
+                activities = getattr(ca, attr, None)
+                if activities:
+                    urls.extend([p.id for p in activities])
+
+        for url in urls:
+            match = re.search(r'attempt[=:](\d+)', url, re.IGNORECASE)
+            if match:
+                return int(match.group(1))
         return None
     
     @staticmethod

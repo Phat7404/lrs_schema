@@ -98,19 +98,21 @@ class FactProcessor:
             cursor.close()
 
     def _get_quiz_metadata(self, cmid, actor_id):
-        """Fetch max_score and attempt_no from Moodle"""
+        """Fetch max_score, attempt_no, quiz_id and attempt_id from Moodle"""
         max_score = None
         attempt_no = None
+        quiz_id = None
+        attempt_id = None
         
         if not cmid:
-            return None, None
+            return None, None, None, None
             
         try:
             mysql_conn = self.db_manager.get_mysql_connection()
             with mysql_conn.cursor() as mysql_cursor:
                 # Get quiz instance ID and max grade
                 mysql_cursor.execute("""
-                    SELECT cm.instance, q.grade as max_score
+                    SELECT cm.instance as quiz_id, q.grade as max_score
                     FROM mdl_course_modules cm
                     JOIN mdl_quiz q ON q.id = cm.instance
                     WHERE cm.id = %s
@@ -119,25 +121,27 @@ class FactProcessor:
                 
                 if res:
                     max_score = res['max_score']
-                    quiz_instance = res['instance']
+                    quiz_id = res['quiz_id']
                     
-                    # Get attempt number for this user
+                    # Get attempt info for this user
                     if actor_id:
                         mysql_cursor.execute("""
-                            SELECT MAX(attempt) as attempt_no 
+                            SELECT id as attempt_id, attempt as attempt_no 
                             FROM mdl_quiz_attempts 
                             WHERE quiz = %s AND userid = (
                                 SELECT id FROM mdl_user WHERE username = %s OR id = %s
                             )
-                        """, (quiz_instance, actor_id, actor_id))
+                            ORDER BY attempt DESC LIMIT 1
+                        """, (quiz_id, actor_id, actor_id))
                         att_res = mysql_cursor.fetchone()
-                        if att_res and att_res['attempt_no']:
+                        if att_res:
+                            attempt_id = att_res['attempt_id']
                             attempt_no = att_res['attempt_no']
                             
         except Exception as e:
             logger.error(f"Error fetching quiz metadata from Moodle: {e}")
             
-        return max_score, attempt_no
+        return max_score, attempt_no, quiz_id, attempt_id
 
     def _generate_quiz_attempt_id(self, statement: Statement) -> str:
         """Generate a unique quiz_attempt_id from registration + quiz cmid"""
@@ -153,7 +157,7 @@ class FactProcessor:
             
         return str(self.extractor.normalize_uuid(raw))
 
-    def _upsert_quiz_record(self, quiz_attempt_id, time_id, actor_id, timestamp=None, 
+    def _upsert_quiz_record(self, quiz_attempt_id, time_id, actor_id, quiz_id=None, timestamp=None, 
                           total_score=None, max_score=None, is_complete=None, is_succeed=None, 
                           duration_ms=None, attempt_no=None):
         """Helper to insert or update fact_quiz record"""
@@ -174,6 +178,9 @@ class FactProcessor:
                 if max_score is not None:
                     query_parts.append("max_score = %s")
                     params.append(max_score)
+                if quiz_id is not None:
+                    query_parts.append("quiz_id = %s")
+                    params.append(quiz_id)
                 if is_complete is not None:
                     query_parts.append("isComplete = %s")
                     params.append(1 if is_complete else 0)
@@ -212,6 +219,10 @@ class FactProcessor:
                     fields.append("max_score")
                     values.append("%s")
                     params.append(max_score)
+                if quiz_id is not None:
+                    fields.append("quiz_id")
+                    values.append("%s")
+                    params.append(quiz_id)
                 if attempt_no is not None:
                     fields.append("attempt_no")
                     values.append("%s")
@@ -259,7 +270,12 @@ class FactProcessor:
         if not statement.context or not statement.context.registration:
             return
             
-        quiz_attempt_id = self._generate_quiz_attempt_id(statement)
+        quiz_attempt_id = self.extractor.extract_moodle_attempt_id(statement)
+        if quiz_attempt_id:
+            quiz_attempt_id = str(quiz_attempt_id)
+        else:
+            quiz_attempt_id = self._generate_quiz_attempt_id(statement)
+
         actor_id = statement.actor.account.name if statement.actor.account else None
         timestamp = self.extractor.parse_timestamp(statement.timestamp)
         cmid = self.extractor.extract_moodle_module_id(statement.object.id)
@@ -285,14 +301,19 @@ class FactProcessor:
         if 'passed' in verb_id and is_succeed is None: is_succeed = True
         if 'failed' in verb_id and is_succeed is None: is_succeed = False
 
-        # Fetch max_score and attempt_no from Moodle
-        max_score, attempt_no = self._get_quiz_metadata(cmid, actor_id)
+        # Fetch max_score, attempt_no, quiz_id, and attempt_id from Moodle
+        max_score, attempt_no, quiz_id, m_attempt_id = self._get_quiz_metadata(cmid, actor_id)
+
+        # Map quiz_attempt_id to Moodle attempt id if available
+        if m_attempt_id:
+            quiz_attempt_id = str(m_attempt_id)
 
         # Upsert
         self._upsert_quiz_record(
             quiz_attempt_id=quiz_attempt_id,
             time_id=time_id,
             actor_id=actor_id,
+            quiz_id=quiz_id,
             timestamp=timestamp,
             total_score=total_score,
             max_score=max_score,
@@ -307,19 +328,24 @@ class FactProcessor:
         if 'answered' not in statement.verb.id.lower() or not statement.context or not statement.context.registration:
             return
         
-        # Only process quiz questions
-        if 'quiz' not in statement.object.id.lower():
+        # Only process quiz questions (usually contain 'question' or 'quiz')
+        obj_id = statement.object.id.lower()
+        if 'quiz' not in obj_id and 'question' not in obj_id:
             return
             
         question_id = statement.object.id
         actor_id = statement.actor.account.name if statement.actor.account else None
         
         # 1. Generate quiz_attempt_id
-        quiz_attempt_id = self._generate_quiz_attempt_id(statement)
-        
+        m_attempt_id = self.extractor.extract_moodle_attempt_id(statement)
+        if m_attempt_id:
+            quiz_attempt_id = str(m_attempt_id)
+        else:
+            quiz_attempt_id = self._generate_quiz_attempt_id(statement)
+            
         # 2. Extract metadata for the parent quiz
         cmid = self.extractor.extract_moodle_module_id(statement.object.id)
-        max_score, attempt_no = self._get_quiz_metadata(cmid, actor_id)
+        max_score, attempt_no, quiz_id, _ = self._get_quiz_metadata(cmid, actor_id)
         
         # 3. Ensure parent quiz exists (Rich Upsert)
         start_time = self.extractor.parse_timestamp(statement.timestamp)
@@ -328,6 +354,7 @@ class FactProcessor:
             quiz_attempt_id=quiz_attempt_id,
             time_id=time_id,
             actor_id=actor_id,
+            quiz_id=quiz_id,
             timestamp=start_time, # Start time approximation
             max_score=max_score,
             attempt_no=attempt_no,
